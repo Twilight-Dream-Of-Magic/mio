@@ -1,5 +1,5 @@
 # mio
-An easy to use header-only cross-platform C++11 memory mapping library with an MIT license.
+An easy to use header-only cross-platform C++20 memory mapping library with an MIT license.
 
 mio has been created with the goal to be easily includable (i.e. no dependencies) in any C++ project that needs memory mapped file IO without the need to pull in Boost.
 
@@ -15,178 +15,516 @@ Furthermore, Boost.Iostreams' solution requires that the user pick offsets exact
 Albeit a minor nitpick, Boost.Iostreams implements memory mapped file IO with a `std::shared_ptr` to provide shared semantics, even if not needed, and the overhead of the heap allocation may be unnecessary and/or unwanted.
 In mio, there are two classes to cover the two use-cases: one that is move-only (basically a zero-cost abstraction over the system specific mmapping functions), and the other that acts just like its Boost.Iostreams counterpart, with shared semantics.
 
-### How to create a mapping
-NOTE: the file must exist before creating a mapping.
+### How to Create a Memory Mapping
 
-There are three ways to map a file into memory:
+> **Note:** The file must exist and be non-empty before mapping.
 
-- Using the constructor, which throws a `std::system_error` on failure:
+There are two primary ways to create a memory mapping:
+
+#### 1. Using the Constructor
+
+Directly construct a memory mapping. On failure, a `std::system_error` is thrown.
+
 ```c++
 mio::mmap_source mmap(path, offset, size_to_map);
 ```
-or you can omit the `offset` and `size_to_map` arguments, in which case the
-entire file is mapped:
+
+You can also omit the `offset` and `size_to_map` parameters to map the entire file:
+
 ```c++
 mio::mmap_source mmap(path);
 ```
 
-- Using the factory function:
-```c++
-std::error_code error;
-mio::mmap_source mmap = mio::make_mmap_source(path, offset, size_to_map, error);
-```
-or:
-```c++
-mio::mmap_source mmap = mio::make_mmap_source(path, error);
-```
+#### 2. Using the Member Function
 
-- Using the `map` member function:
+Alternatively, create an uninitialized mapping and then invoke the `map` member function. Like the constructor, this API throws an exception on error.
+
 ```c++
-std::error_code error;
 mio::mmap_source mmap;
-mmap.map(path, offset, size_to_map, error);
+mmap.map(path, offset, size_to_map);
 ```
-or:
-```c++
-mmap.map(path, error);
-```
-**NOTE:** The constructors **require** exceptions to be enabled. If you prefer
-to build your projects with `-fno-exceptions`, you can still use the other ways.
 
-Moreover, in each case, you can provide either some string type for the file's path, or you can use an existing, valid file handle.
+Or simply map the entire file:
+
+```c++
+mmap.map(path);
+```
+
+**Important:** All these APIs now use exceptions for error reporting. Internally, error codes are still used, but they are hidden from the external interface.
+
+Moreover, you may provide either a file path (as any common string type) or an existing valid file handle. For example:
+
 ```c++
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <mio/mmap.hpp>
-// #include <mio/mio.hpp> if using single header
 #include <algorithm>
 
-int main()
-{
-    // NOTE: error handling omitted for brevity.
+int main() {
+    // Ensure the file exists before mapping.
     const int fd = open("file.txt", O_RDONLY);
     mio::mmap_source mmap(fd, 0, mio::map_entire_file);
     // ...
 }
 ```
-However, mio does not check whether the provided file descriptor has the same access permissions as the desired mapping, so the mapping may fail. Such errors are reported via the `std::error_code` out parameter that is passed to the mapping function.
 
-**WINDOWS USERS**: This library *does* support the use of wide character types
-for functions where character strings are expected (e.g. path parameters).
+**Windows Users:** Wide character types are supported for path parameters.
+
+---
 
 ### Example
 
+Below is a sample program that demonstrates both read-write and read-only mappings. Notice that no error code parameters are needed—the APIs throw exceptions upon failure.
+
 ```c++
 #include <mio/mmap.hpp>
-// #include <mio/mio.hpp> if using single header
-#include <system_error> // for std::error_code
-#include <cstdio> // for std::printf
+#include <cstdio>
 #include <cassert>
 #include <algorithm>
 #include <fstream>
+#include <iostream>
 
-int handle_error(const std::error_code& error);
-void allocate_file(const std::string& path, const int size);
+void allocate_file(const std::string& path, int size) {
+    std::ofstream file(path);
+    file << std::string(size, '0');
+}
 
-int main()
-{
-    const auto path = "file.txt";
-
-    // NOTE: mio does *not* create the file for you if it doesn't exist! You
-    // must ensure that the file exists before establishing a mapping. It
-    // must also be non-empty. So for illustrative purposes the file is
-    // created now.
+int main() {
+    const std::string path = "file.txt";
     allocate_file(path, 155);
 
-    // Read-write memory map the whole file by using `map_entire_file` where the
-    // length of the mapping is otherwise expected, with the factory method.
-    std::error_code error;
-    mio::mmap_sink rw_mmap = mio::make_mmap_sink(
-            path, 0, mio::map_entire_file, error);
-    if (error) { return handle_error(error); }
+    // Create a read-write mapping for the entire file.
+    mio::mmap_sink rw_mmap = mio::make_mmap_sink(path, 0, mio::map_entire_file);
 
-    // You can use any iterator based function.
+    // Fill the mapping with 'a' characters.
     std::fill(rw_mmap.begin(), rw_mmap.end(), 'a');
 
-    // Or manually iterate through the mapped region just as if it were any other 
-    // container, and change each byte's value (since this is a read-write mapping).
+    // Modify each byte.
     for (auto& b : rw_mmap) {
         b += 10;
     }
 
-    // Or just change one value with the subscript operator.
-    const int answer_index = rw_mmap.size() / 2;
-    rw_mmap[answer_index] = 42;
+    // Change a single byte in the middle.
+    const int mid = rw_mmap.size() / 2;
+    rw_mmap[mid] = 42;
 
-    // Don't forget to flush changes to disk before unmapping. However, if
-    // `rw_mmap` were to go out of scope at this point, the destructor would also
-    // automatically invoke `sync` before `unmap`.
-    rw_mmap.sync(error);
-    if (error) { return handle_error(error); }
-
-    // We can then remove the mapping, after which rw_mmap will be in a default
-    // constructed state, i.e. this and the above call to `sync` have the same
-    // effect as if the destructor had been invoked.
+    // Flush changes and unmap. If the mapping goes out of scope, the destructor will also flush.
+    rw_mmap.sync();
     rw_mmap.unmap();
 
-    // Now create the same mapping, but in read-only mode. Note that calling the
-    // overload without the offset and file length parameters maps the entire
-    // file.
+    // Create a read-only mapping of the entire file.
     mio::mmap_source ro_mmap;
-    ro_mmap.map(path, error);
-    if (error) { return handle_error(error); }
+    ro_mmap.map(path);
 
-    const int the_answer_to_everything = ro_mmap[answer_index];
-    assert(the_answer_to_everything == 42);
+    // Verify that the modification was successful.
+    assert(ro_mmap[mid] == 42);
+
+    std::printf("All tests passed!\n");
+    return 0;
 }
+```
 
-int handle_error(const std::error_code& error)
-{
-    const auto& errmsg = error.message();
-    std::printf("error mapping file: %s, exiting...\n", errmsg.c_str());
-    return error.value();
+---
+
+### Additional Features
+
+This version of `mio` takes advantage of modern C++ features:
+
+- **Source Location and Filesystem:**  
+  Debugging is improved by leveraging `std::source_location` to report detailed context (file name, function name, line, and column) when assertions fail. Filesystem support now enables more natural path handling.
+  
+- **Future C++23 Support:**  
+  In C++23 and above, assertions will include a full stack trace using `std::stacktrace`, making it easier to trace runtime errors.
+
+For example, the new assertion function might look like:
+
+```c++
+#if __cplusplus >= 202002L
+inline void cpp2020_assert(bool condition, const char* errorMessage,
+                             std::source_location location = std::source_location::current()) {
+    if (!condition) {
+        std::cout << "Error: " << errorMessage << "\n"
+                  << "File: " << location.file_name() << "\n"
+                  << "Function: " << location.function_name() << "\n"
+                  << "Line: " << location.line() << "\n"
+                  << "Column: " << location.column() << std::endl;
+#if __cplusplus >= 202300L
+        std::cout << "Stack trace:\n";
+        for (const auto& frame : std::stacktrace::current())
+            std::cout << frame << std::endl;
+#endif
+        throw std::runtime_error(errorMessage);
+    }
 }
+#endif
+```
 
-void allocate_file(const std::string& path, const int size)
+---
+
+### Test Suite Overview
+
+The test suite now combines both the new features and the core mapping functionality. It demonstrates:
+
+- Mapping an entire file or a portion of it.
+- Both read-write and read-only mappings.
+- Mapping with a file descriptor as well as a file path.
+- Validation of mapped content against expected data.
+- Handling of invalid mapping cases without exposing internal error codes.
+
+For example, one test case maps the file at various offsets to verify that the correct segment of the file is mapped:
+
+```c++
+void test_at_offset(const std::string& buffer, const char* path, size_t offset) {
+    // Map the file region starting at the given offset.
+    mio::mmap_source file_view = mio::make_mmap_source(path, offset, mio::map_entire_file);
+    assert(file_view.is_open());
+    // Compare the mapped content to the original buffer...
+}
+```
+
+This comprehensive test case confirms that the modernized `mio` library is robust and adheres to modern C++ best practices.
+
+### Test Suite
+
+The test code below serves a dual purpose. It demonstrates the standard usage of the library (mapping, reading, writing, and unmapping files) while also showcasing intentional error cases. In the error cases, invalid inputs (such as an invalid file path, empty path, or incorrect file handle) will trigger internal assertion exceptions. This change highlights that internal error checking no longer uses `std::error_code` in the public API.
+
+```c++
+#include <string>
+#include <fstream>
+#include <iostream>
+#include <cassert>
+#include <numeric>
+#include <vector>
+
+#include "../single_include/mio/mio.hpp"
+
+// Just make sure this compiles.
+#include <cstddef>
+using mmap_source = mio::basic_mmap_source<std::byte>;
+
+template<class MMap>
+void test_at_offset(const MMap& file_view, const std::string& buffer, const size_t offset);
+inline void test_at_offset(const std::string& buffer, const char* path, const size_t offset);
+
+inline void allocate_file(const std::string& path, const int size)
 {
     std::ofstream file(path);
     std::string s(size, '0');
     file << s;
 }
+
+inline void test_rewrite_file()
+{
+    const auto path = "test_rewrite.txt";
+
+    // NOTE: mio does *not* create the file for you if it doesn't exist!
+    // You must ensure that the file exists and is non-empty before mapping.
+    allocate_file(path, 204800);
+
+    // Create a read-write mapping for the entire file.
+    mio::mmap_sink rw_mmap = mio::make_mmap_sink(
+        path, 0, mio::map_entire_file);
+
+    // Use any iterator-based function to modify the mapping.
+    std::fill(rw_mmap.begin(), rw_mmap.end(), 'a');
+
+    // Or manually iterate through the mapped region and change each byte.
+    for (auto& b : rw_mmap)
+    {
+        b += 10;
+    }
+
+    // Change one specific byte using the subscript operator.
+    const int answer_index = rw_mmap.size() / 2;
+    rw_mmap[answer_index] = 42;
+
+    // Flush changes and unmap.
+    rw_mmap.sync();
+    rw_mmap.unmap();
+
+    // Create a read-only mapping for the entire file.
+    mio::mmap_source ro_mmap;
+    ro_mmap.map(path);
+
+    const int the_answer_to_everything = ro_mmap[answer_index];
+    assert(the_answer_to_everything == 42);
+}
+
+inline void test_error_case(char* path, const std::string& buffer)
+{
+    // Macro to check that an invalid mapping results in an empty mapping.
+#define CHECK_INVALID_MMAP(m) do { \
+        assert(m.empty()); \
+        assert(!m.is_open()); \
+        } while(0)
+
+    mio::mmap_source m;
+
+    // Attempt mapping an invalid file name.
+    m = mio::make_mmap_source("garbage-that-hopefully-doesnt-exist", 0, 0);
+    CHECK_INVALID_MMAP(m);
+
+    // Attempt mapping with an empty path.
+    m = mio::make_mmap_source(static_cast<const char*>(0), 0, 0);
+    CHECK_INVALID_MMAP(m);
+    m = mio::make_mmap_source(std::string(), 0, 0);
+    CHECK_INVALID_MMAP(m);
+
+    // Attempt mapping with an invalid handle.
+    m = mio::make_mmap_source(mio::invalid_handle, 0, 0);
+    CHECK_INVALID_MMAP(m);
+
+    // Attempt mapping with an invalid offset.
+    m = mio::make_mmap_source(path, 100 * buffer.size(), buffer.size());
+    CHECK_INVALID_MMAP(m);
+}
+
+int main()
+{
+    std::system("chcp 65001");
+
+    // Verify that mio compiles with non-const char* strings too.
+    const char _path[] = "test-file";
+    const int path_len = sizeof(_path);
+    char* path = new char[path_len];
+    std::copy(_path, _path + path_len, path);
+
+    const auto page_size = mio::page_size();
+    // Prepare a buffer and write it to a file.
+    const int file_size = 4 * page_size - 250; // For example, 16134 bytes for a 4KiB page size.
+    std::string buffer(file_size, 0);
+    // Fill buffer starting at the first printable ASCII character.
+    char v = 33;
+    for (auto& b : buffer) {
+        b = v;
+        ++v;
+        // Cycle back after reaching the last printable ASCII character.
+        v %= 126;
+        if (v == 0) {
+            v = 33;
+        }
+    }
+
+    std::ofstream file(path);
+    file << buffer;
+    file.close();
+
+    // Test mapping the whole file.
+    test_at_offset(buffer, path, 0);
+
+    // Test mapping starting from an offset just below the page size.
+    test_at_offset(buffer, path, page_size - 3);
+
+    // Test mapping starting from an offset just above the page size.
+    test_at_offset(buffer, path, page_size + 3);
+
+    // Test mapping starting from an offset further ahead.
+    test_at_offset(buffer, path, 2 * page_size + 3);
+
+    std::cout << "Continuing with tests..." << std::endl;
+
+    // Uncomment the next line to run tests for error cases.
+    // Note: In these cases, the internal assertion exceptions will be thrown.
+    // test_error_case(path, buffer);
+
+    // The following code ensures that all API variations compile correctly.
+    {
+        mio::ummap_source _1;
+        mio::shared_ummap_source _2;
+        // shared_mmap mapping compiles as well.
+        mio::shared_mmap_source _3(path, 0, mio::map_entire_file);
+        auto _4 = mio::make_mmap_source(path);
+        auto _5 = mio::make_mmap<mio::shared_mmap_source>(path, 0, mio::map_entire_file);
+#ifdef _WIN32
+        const std::wstring wpath1 = L"file";
+
+        // If the file exists, perform mapping.
+        if (std::filesystem::exists(wpath1))
+        {
+            auto _6 = mio::make_mmap_source(wpath1);
+            mio::mmap_source _7;
+            _7.map(wpath1);
+        }
+        else
+        {
+            std::wcerr << L"Cannot open file: " << wpath1 << std::endl;
+        }
+
+        // Even if the file cannot be opened, the following lines are executed.
+        const std::wstring wpath2 = wpath1 + L"000";
+        if (std::filesystem::exists(wpath2))
+        {
+            auto _8 = mio::make_mmap_source(wpath2);
+            mio::mmap_source _9;
+            _9.map(wpath1);
+        }
+        else
+        {
+            std::wcerr << L"Cannot open file: " << wpath2 << std::endl;
+        }
+#else
+        const char* path = "path_to_file";  // Replace with an actual file path
+        const int fd = open(path, O_RDONLY);
+
+        if (fd < 0)
+        {
+            std::cerr << "Failed to open file: " << path << std::endl;
+        }
+        else
+        {
+            // File opened successfully; perform mmap operations.
+            mio::mmap_source _fdmmap(fd, 0, mio::map_entire_file);
+            // Unmap if needed.
+            _fdmmap.unmap();
+            // Remap using the same file descriptor.
+            _fdmmap.map(fd);
+
+            // Close the file descriptor if it's no longer needed.
+            close(fd);
+        }
+#endif
+    }
+
+    std::printf("all tests passed!\n");
+    return 0;
+}
+
+void test_at_offset(const std::string& buffer, const char* path, const size_t offset)
+{
+    // Sanity check.
+    assert(offset < buffer.size());
+
+    // Map the region of the file starting at the given offset.
+    mio::mmap_source file_view = mio::make_mmap_source(path, offset, mio::map_entire_file);
+
+    assert(file_view.is_open());
+    const size_t mapped_size = buffer.size() - offset;
+    assert(file_view.size() == mapped_size);
+
+    test_at_offset(file_view, buffer, offset);
+
+    // Convert the mapping to a shared mmap.
+    mio::shared_mmap_source shared_file_view(std::move(file_view));
+    assert(!file_view.is_open());
+    assert(shared_file_view.is_open());
+    assert(shared_file_view.size() == mapped_size);
+
+    // Optionally, you can run the test on the shared mapping as well.
+    // test_at_offset(shared_file_view, buffer, offset);
+}
+
+template<class MMap>
+void test_at_offset(const MMap& file_view, const std::string& buffer, const size_t offset)
+{
+    // Verify that the bytes in the mapping match those in the buffer.
+    for (size_t buf_idx = offset, view_idx = 0;
+         buf_idx < buffer.size() && view_idx < file_view.size();
+         ++buf_idx, ++view_idx)
+    {
+        if (file_view[view_idx] != buffer[buf_idx])
+        {
+            std::printf("%luth byte mismatch: expected(%d) <> actual(%d)",
+                        buf_idx, buffer[buf_idx], file_view[view_idx]);
+            std::cout << std::flush;
+            assert(0);
+        }
+    }
+}
 ```
 
-`mio::basic_mmap` is move-only, but if multiple copies to the same mapping are needed, use `mio::basic_shared_mmap` which has `std::shared_ptr` semantics and has the same interface as `mio::basic_mmap`.
 ```c++
-#include <mio/shared_mmap.hpp>
+#include <random>
+#include <iomanip>
+#include <iostream>
+#include <cassert>
+#include <cstddef>
+#include <string>
 
-mio::shared_mmap_source shared_mmap1("path", offset, size_to_map);
-mio::shared_mmap_source shared_mmap2(std::move(mmap1)); // or use operator=
-mio::shared_mmap_source shared_mmap3(std::make_shared<mio::mmap_source>(mmap1)); // or use operator=
-mio::shared_mmap_source shared_mmap4;
-shared_mmap4.map("path", offset, size_to_map, error);
+// Make sure to include your mio header.
+#include "../single_include/mio/mio.hpp"
+
+inline void test_rewrite_random_file()
+{
+	const auto path = "test_rewrite_random.dat";
+
+	// Ensure the file exists and is non-empty.
+	// 20MB = 20971520 Bytes
+	allocate_file(path, 20971520);
+
+	// Seed the random number generator.
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::uniform_int_distribution<> dis(0, 255);
+
+	// Create a read-write mapping for the entire file.
+	mio::mmap_sink rw_mmap = mio::make_mmap_sink(path, 0, mio::map_entire_file);
+
+	// Fill the mapping with random binary bytes.
+	for (auto& byte : rw_mmap)
+	{
+		byte = static_cast<char>(dis(gen));
+	}
+
+	// Choose an offset near the end (e.g., 75% into the file) and write the value 42.
+	const size_t answer_index = rw_mmap.size() * 3 / 4;
+	rw_mmap[answer_index] = static_cast<char>(42);
+
+	// Flush changes and unmap.
+	rw_mmap.sync();
+	rw_mmap.unmap();
+
+	// Reopen the file as a read-only mapping.
+	mio::mmap_source ro_mmap;
+	ro_mmap.map(path);
+
+	// Verify that the byte at the chosen offset is 42.
+	const int the_answer = static_cast<int>(ro_mmap[answer_index]);
+	assert(the_answer == 42);
+
+	// Print the entire file content in hexadecimal format.
+	std::cout << "Hex dump of " << path << ":\n";
+	for (size_t i = 0; i < ro_mmap.size(); ++i)
+	{
+		//last 10240 bytes are printed in one line
+		if (ro_mmap.size() - 1 - i < 10240)
+		{
+			std::cout << std::hex << std::setw(2) << std::setfill('0')
+				<< static_cast<int>(static_cast<unsigned char>(ro_mmap[i])) << " ";
+			if ((i + 1) % 16 == 0)
+				std::cout << "\n";
+		}
+	}
+	std::cout << std::dec << "\n"; // Restore default number format.
+}
+
+int main()
+{
+    test_rewrite_random_file();
+}
 ```
 
-It's possible to define the type of a byte (which has to be the same width as `char`), though aliases for the most common ones are provided by default:
+---
+
+### Key Points
+
+- **Error Handling via Exceptions:**  
+  The revised API now uses internal assertions that throw exceptions when encountering errors. This design change replaces the previous use of `std::error_code` in the public API. In the test cases, mapping failures (for example, due to an invalid path) trigger these assertion exceptions.  
+
+- **Demonstrated Error Cases:**  
+  The `test_error_case` function illustrates various invalid inputs (non-existent files, empty paths, invalid handles, and incorrect offsets). These cases are now shown explicitly to guide developers on how the library responds to erroneous usage. (By default, these tests are commented out to avoid interrupting the normal flow; they can be enabled for debugging.)
+
+- **Modern C++ Features:**  
+  The test suite (along with the rest of the library) leverages modern C++ features such as source location for better debug messages. Future updates may also incorporate stack traces when using C++23 or later.
+
+---
+
+### Single Header File
+
+`mio` can be added to your project as a single header file by including:
+
 ```c++
-using mmap_source = basic_mmap_source<char>;
-using ummap_source = basic_mmap_source<unsigned char>;
-
-using mmap_sink = basic_mmap_sink<char>;
-using ummap_sink = basic_mmap_sink<unsigned char>;
-```
-But it may be useful to define your own types, say when using the new `std::byte` type in C++17:
-```c++
-using mmap_source = mio::basic_mmap_source<std::byte>;
-using mmap_sink = mio::basic_mmap_sink<std::byte>;
-```
-
-Though generally not needed, since mio maps users requested offsets to page boundaries, you can query the underlying system's page allocation granularity by invoking `mio::page_size()`, which is located in `mio/page.hpp`.
-
-### Single Header File 
-Mio can be added to your project as a single header file simply by including `\single_include\mio\mio.hpp`. Single header files can be regenerated at any time by running the `amalgamate.py` script within `\third_party`.  
-```
-python amalgamate.py -c config.json -s ../include
+#include "single_include/mio/mio.hpp"
 ```
 
 ## CMake

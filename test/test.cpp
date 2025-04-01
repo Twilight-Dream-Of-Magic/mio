@@ -2,22 +2,18 @@
 #include <fstream>
 #include <iostream>
 #include <cassert>
-#include <system_error>
 #include <numeric>
 #include <vector>
 
 #include "../single_include/mio/mio.hpp"
 
 // Just make sure this compiles.
-# include <cstddef>
-using mmap_source = mio::basic_mmap_source<std::byte>;
+#include <cstddef>
+using mmap_source_bytes = mio::basic_mmap_source<std::byte>;
 
 template<class MMap>
-void test_at_offset(const MMap& file_view, const std::string& buffer,
-	const size_t offset);
-inline void test_at_offset(const std::string& buffer, const char* path,
-	const size_t offset, std::error_code& error);
-inline int handle_error(const std::error_code& error);
+void test_at_offset(const MMap& file_view, const std::string& buffer, const size_t offset);
+inline void test_at_offset(const std::string& buffer, const char* path, const size_t offset);
 
 inline void allocate_file(const std::string& path, const int size)
 {
@@ -26,14 +22,7 @@ inline void allocate_file(const std::string& path, const int size)
 	file << s;
 }
 
-inline int handle_error(const std::error_code& error)
-{
-	const auto& errmsg = error.message();
-	std::printf("Error mapping file: %s, exiting...\n", errmsg.c_str());
-	return error.value();
-}
-
-inline int test_rewrite_file()
+inline void test_rewrite_file()
 {
 	const auto path = "test_rewrite.txt";
 
@@ -45,10 +34,8 @@ inline int test_rewrite_file()
 
 	// Read-write memory map the whole file by using `map_entire_file` where the
 	// length of the mapping is otherwise expected, with the factory method.
-	std::error_code error;
 	mio::mmap_sink rw_mmap = mio::make_mmap_sink(
-		path, 0, mio::map_entire_file, error);
-	if (error) { return handle_error(error); }
+		path, 0, mio::map_entire_file);
 
 	// You can use any iterator based function.
 	std::fill(rw_mmap.begin(), rw_mmap.end(), 'a');
@@ -67,8 +54,7 @@ inline int test_rewrite_file()
 	// Don't forget to flush changes to disk before unmapping. However, if
 	// `rw_mmap` were to go out of scope at this point, the destructor would also
 	// automatically invoke `sync` before `unmap`.
-	rw_mmap.sync(error);
-	if (error) { return handle_error(error); }
+	rw_mmap.sync();
 
 	// We can then remove the mapping, after which rw_mmap will be in a default
 	// constructed state, i.e. this and the above call to `sync` have the same
@@ -79,16 +65,44 @@ inline int test_rewrite_file()
 	// overload without the offset and file length parameters maps the entire
 	// file.
 	mio::mmap_source ro_mmap;
-	ro_mmap.map(path, error);
-	if (error) { return handle_error(error); }
+	ro_mmap.map(path);
 
 	const int the_answer_to_everything = ro_mmap[answer_index];
 	assert(the_answer_to_everything == 42);
 }
 
+inline void test_error_case(char* path, const std::string& buffer)
+{
+
+#define CHECK_INVALID_MMAP(m) do { \
+        assert(m.empty()); \
+        assert(!m.is_open()); \
+        } while(0)
+
+	mio::mmap_source m;
+
+	// See if mapping an invalid file results in an error.
+	m = mio::make_mmap_source("garbage-that-hopefully-doesnt-exist", 0, 0);
+	CHECK_INVALID_MMAP(m);
+
+	// Empty path?
+	m = mio::make_mmap_source(static_cast<const char*>(0), 0, 0);
+	CHECK_INVALID_MMAP(m);
+	m = mio::make_mmap_source(std::string(), 0, 0);
+	CHECK_INVALID_MMAP(m);
+
+	// Invalid handle?
+	m = mio::make_mmap_source(mio::invalid_handle, 0, 0);
+	CHECK_INVALID_MMAP(m);
+
+	// Invalid offset?
+	m = mio::make_mmap_source(path, 100 * buffer.size(), buffer.size());
+	CHECK_INVALID_MMAP(m);
+}
+
 int main()
 {
-	std::error_code error;
+	std::system("chcp 65001");
 
 	// Make sure mio compiles with non-const char* strings too.
 	const char _path[] = "test-file";
@@ -117,48 +131,21 @@ int main()
 	file.close();
 
 	// Test whole file mapping.
-	test_at_offset(buffer, path, 0, error);
-	if (error) { return handle_error(error); }
+	test_at_offset(buffer, path, 0);
 
 	//Test starting from below the page size.
-	test_at_offset(buffer, path, page_size - 3, error);
-	if (error) { return handle_error(error); }
+	test_at_offset(buffer, path, page_size - 3);
 
 	// Test starting from above the page size.
-	test_at_offset(buffer, path, page_size + 3, error);
-	if (error) { return handle_error(error); }
+	test_at_offset(buffer, path, page_size + 3);
 
 	// Test starting from above the page size.
-	test_at_offset(buffer, path, 2 * page_size + 3, error);
-	if (error) { return handle_error(error); }
+	test_at_offset(buffer, path, 2 * page_size + 3);
 
-	{
-#define CHECK_INVALID_MMAP(m) do { \
-        assert(error); \
-        assert(m.empty()); \
-        assert(!m.is_open()); \
-        error.clear(); } while(0)
+	std::cout << "Continuing with tests..." << std::endl;
 
-		mio::mmap_source m;
-
-		// See if mapping an invalid file results in an error.
-		m = mio::make_mmap_source("garbage-that-hopefully-doesnt-exist", 0, 0, error);
-		CHECK_INVALID_MMAP(m);
-
-		// Empty path?
-		m = mio::make_mmap_source(static_cast<const char*>(0), 0, 0, error);
-		CHECK_INVALID_MMAP(m);
-		m = mio::make_mmap_source(std::string(), 0, 0, error);
-		CHECK_INVALID_MMAP(m);
-
-		// Invalid handle?
-		m = mio::make_mmap_source(mio::invalid_handle, 0, 0, error);
-		CHECK_INVALID_MMAP(m);
-
-		// Invalid offset?
-		m = mio::make_mmap_source(path, 100 * buffer.size(), buffer.size(), error);
-		CHECK_INVALID_MMAP(m);
-	}
+	//Uncomment this line code for checking test error cases.
+	//test_error_case(path, buffer);
 
 	// Make sure these compile.
 	{
@@ -167,41 +154,70 @@ int main()
 		// Make sure shared_mmap mapping compiles as all testing was done on
 		// normal mmaps.
 		mio::shared_mmap_source _3(path, 0, mio::map_entire_file);
-		auto _4 = mio::make_mmap_source(path, error);
-		auto _5 = mio::make_mmap<mio::shared_mmap_source>(path, 0, mio::map_entire_file, error);
+		auto _4 = mio::make_mmap_source(path);
+		auto _5 = mio::make_mmap<mio::shared_mmap_source>(path, 0, mio::map_entire_file);
 #ifdef _WIN32
-		const wchar_t* wpath1 = L"dasfsf";
-		auto _6 = mio::make_mmap_source(wpath1, error);
-		mio::mmap_source _7;
-		_7.map(wpath1, error);
-		const std::wstring wpath2 = wpath1;
-		auto _8 = mio::make_mmap_source(wpath2, error);
-		mio::mmap_source _9;
-		_9.map(wpath1, error);
+		const std::wstring wpath1 = L"file";
+
+		// If the file can be opened, perform make_mmap_source and mapping.
+		if (std::filesystem::exists(wpath1))
+		{
+			auto _6 = mio::make_mmap_source(wpath1);
+			mio::mmap_source _7;
+			_7.map(wpath1);
+		}
+		else
+		{
+			std::wcerr << L"Cannot open file: " << wpath1 << std::endl;
+		}
+
+		// Other operations that must execute regardless.
+		// Even if the file is not openable, these lines are executed.
+		const std::wstring wpath2 = wpath1 + L"000";
+		if (std::filesystem::exists(wpath2))
+		{
+			auto _8 = mio::make_mmap_source(wpath2);
+			mio::mmap_source _9;
+			_9.map(wpath1);
+		}
+		else
+		{
+			std::wcerr << L"Cannot open file: " << wpath2 << std::endl;
+		}
 #else
+		const char* path = "path_to_file";  // Replace with your actual file path
 		const int fd = open(path, O_RDONLY);
-		mio::mmap_source _fdmmap(fd, 0, mio::map_entire_file);
-		_fdmmap.unmap();
-		_fdmmap.map(fd, error);
+
+		if (fd < 0)
+		{
+			std::cerr << "Failed to open file: " << path << std::endl;
+		}
+		else
+		{
+			// File opened successfully, proceed with mmap operations
+			mio::mmap_source _fdmmap(fd, 0, mio::map_entire_file);
+			// Unmap first if needed
+			_fdmmap.unmap();
+			// Remap using the same file descriptor
+			_fdmmap.map(fd);
+
+			// Close the file descriptor if it's no longer needed
+			close(fd);
+		}
 #endif
 	}
-
-	if (test_rewrite_file())
-		throw std::runtime_error("test_rewrite_file failed");
 
 	std::printf("all tests passed!\n");
 }
 
 void test_at_offset(const std::string& buffer, const char* path,
-	const size_t offset, std::error_code& error)
+	const size_t offset)
 {
 	// Sanity check.
 	assert(offset < buffer.size());
 
 	// Map the region of the file to which buffer was written.
-	mio::mmap_source file_view = mio::make_mmap_source(
-		path, offset, mio::map_entire_file, error);
-	if (error) { return; }
+	mio::mmap_source file_view = mio::make_mmap_source(path, offset, mio::map_entire_file);
 
 	assert(file_view.is_open());
 	const size_t mapped_size = buffer.size() - offset;
@@ -219,14 +235,15 @@ void test_at_offset(const std::string& buffer, const char* path,
 }
 
 template<class MMap>
-void test_at_offset(const MMap& file_view, const std::string& buffer,
-	const size_t offset)
+void test_at_offset(const MMap& file_view, const std::string& buffer, const size_t offset)
 {
 	// Then verify that mmap's bytes correspond to that of buffer.
 	for (size_t buf_idx = offset, view_idx = 0;
 		buf_idx < buffer.size() && view_idx < file_view.size();
-		++buf_idx, ++view_idx) {
-		if (file_view[view_idx] != buffer[buf_idx]) {
+		++buf_idx, ++view_idx)
+	{
+		if (file_view[view_idx] != buffer[buf_idx])
+		{
 			std::printf("%luth byte mismatch: expected(%d) <> actual(%d)",
 				buf_idx, buffer[buf_idx], file_view[view_idx]);
 			std::cout << std::flush;

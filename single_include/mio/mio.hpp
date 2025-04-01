@@ -44,8 +44,6 @@
 #include <cstdlib>
 #include <locale>
 
-#include <source_location>
-
 #include <system_error> // std::error_code
 #include <memory> // std::shared_ptr
 
@@ -64,6 +62,14 @@
 
 #include <filesystem>
 
+#if __cplusplus >= 202002L
+#include <source_location>
+#endif
+
+#if __cplusplus >= 202300L
+#include <stacktrace>
+#endif
+
 
 namespace mio
 {
@@ -80,19 +86,28 @@ namespace mio
 
 	inline void my_cpp2020_assert(const bool JudgmentCondition, const char* ErrorMessage, std::source_location AssertExceptionDetailTrackingObject)
 	{
-		if(!JudgmentCondition)
+		if (!JudgmentCondition)
 		{
-			std::system("dhcp 65001");
+			std::system("chcp 65001");
 
 			std::cout << "The error message is(错误信息是):\n" << ErrorMessage << std::endl;
-
 			std::cout << "Oh, crap, some of the code already doesn't match the conditions at runtime.(哦，糟糕，有些代码在运行时已经不匹配条件。)\n\n\n" << std::endl;
 			std::cout << "Here is the trace before the assertion occurred(下面是发生断言之前的追踪信息):\n\n" << std::endl;
 			std::cout << "The condition determines the code file that appears to be a mismatch(条件判断出现不匹配的代码文件):\n" << AssertExceptionDetailTrackingObject.file_name() << std::endl;
 			std::cout << "Name of the function where this assertion is located(该断言所在的函数的名字):\n" << AssertExceptionDetailTrackingObject.function_name() << std::endl;
 			std::cout << "Number of lines of code where the assertion is located(该断言所在的代码行数):\n" << AssertExceptionDetailTrackingObject.line() << std::endl;
 			std::cout << "Number of columns of code where the assertion is located(该断言所在的代码列数):\n" << AssertExceptionDetailTrackingObject.column() << std::endl;
-		
+
+			// Print stack trace for C++23 and above
+#if __cplusplus >= 202300L
+			std::cout << "Stack trace before assertion:\n";
+
+			for (const auto& frame : std::stacktrace::current())
+			{
+				std::cout << frame << std::endl;
+			}
+#endif
+
 			throw std::runtime_error(ErrorMessage);
 		}
 		else
@@ -157,8 +172,8 @@ namespace mio
 
 namespace mio {
 	namespace detail {
-		#if __cplusplus >= 201103L && __cplusplus <= 201703L
-		#include <codecvt>
+#if __cplusplus >= 201103L && __cplusplus <= 201703L
+#include <codecvt>
 		inline std::wstring cpp2017_string2wstring(const std::string& _string)
 		{
 			using convert_typeX = std::codecvt_utf8<wchar_t>;
@@ -174,7 +189,7 @@ namespace mio {
 
 			return converterX.to_bytes(_wstring);
 		}
-		#endif
+#endif
 
 		inline std::wstring string2wstring(const std::string& _string)
 		{
@@ -198,12 +213,12 @@ namespace mio {
 
 			wide_character_buffer.resize(target_wstring_count);
 
-		#if defined(_MSC_VER)
+#if defined(_MSC_VER)
 			std::size_t _converted_count = 0;
 			::mbstowcs_s(&_converted_count, &wide_character_buffer[0], target_wstring_count, _string.c_str(), ((size_t)-1));
-		#else
+#else
 			::mbstowcs(&wide_character_buffer[0], _string.c_str(), target_wstring_count);
-		#endif
+#endif
 
 			std::size_t _target_wstring_size = 0;
 			for (auto begin = wide_character_buffer.begin(), end = wide_character_buffer.end(); begin != end && *begin != L'\0'; begin++)
@@ -212,19 +227,16 @@ namespace mio {
 			}
 			std::wstring _wstring{ wide_character_buffer.data(),  _target_wstring_size };
 
-		#if defined(_MSC_VER)
-			if (_converted_count == 0)
-			{
-				throw std::runtime_error("The function string2wstring is not work !");
-			}
-		#endif
+#if defined(_MSC_VER)
+			my_cpp2020_assert(_converted_count != 0, "The function string2wstring is not work !", std::source_location::current());
+#endif
 
 			if (found_not_ascii_count > 0)
 			{
 				//Need Contains character('\0') then check size
 				if (((_target_wstring_size + 1) - source_string_count) != (found_not_ascii_count / 2))
 				{
-					throw std::runtime_error("The function string2wstring, An error occurs during conversion !");
+					my_cpp2020_assert(false, "The function string2wstring, An error occurs during conversion !", std::source_location::current());
 				}
 				else
 				{
@@ -236,7 +248,7 @@ namespace mio {
 				//Need Contains character('\0') then check size
 				if ((_target_wstring_size + 1) != source_string_count)
 				{
-					throw std::runtime_error("The function string2wstring, An error occurs during conversion !");
+					my_cpp2020_assert(false, "The function string2wstring, An error occurs during conversion !", std::source_location::current());
 				}
 				else
 				{
@@ -267,12 +279,12 @@ namespace mio {
 
 			character_buffer.resize(target_string_count);
 
-		#if defined(_MSC_VER)
+#if defined(_MSC_VER)
 			std::size_t _converted_count = 0;
 			::wcstombs_s(&_converted_count, &character_buffer[0], target_string_count, _wstring.c_str(), ((size_t)-1));
-		#else
+#else
 			::wcstombs(&character_buffer[0], _wstring.c_str(), target_string_count);
-		#endif
+#endif
 
 			std::size_t _target_string_size = 0;
 			for (auto begin = character_buffer.begin(), end = character_buffer.end(); begin != end && *begin != '\0'; begin++)
@@ -281,18 +293,18 @@ namespace mio {
 			}
 			std::string _string{ character_buffer.data(),  _target_string_size };
 
-		#if defined(_MSC_VER)
+#if defined(_MSC_VER)
 			if (_converted_count == 0)
 			{
-				throw std::runtime_error("The function wstring2string is not work !");
+				my_cpp2020_assert(_converted_count != 0, "The function wstring2string is not work !", std::source_location::current());
 			}
-		#endif
+#endif
 
 			if (found_not_ascii_count > 0)
 			{
 				if (((_target_string_size + 1) - source_wstring_count) != (found_not_ascii_count * 2))
 				{
-					throw std::runtime_error("The function wstring2string, An error occurs during conversion !");
+					my_cpp2020_assert(false, "The function wstring2string, An error occurs during conversion !", std::source_location::current());
 				}
 				else
 				{
@@ -303,7 +315,7 @@ namespace mio {
 			{
 				if ((_target_string_size + 1) != source_wstring_count)
 				{
-					throw std::runtime_error("The function wstring2string, An error occurs during conversion !");
+					my_cpp2020_assert(false, "The function wstring2string, An error occurs during conversion !", std::source_location::current());
 				}
 				else
 				{
@@ -320,16 +332,18 @@ namespace mio {
 #include <concepts>
 
 		template<typename T>
-		struct normalized {
+		struct normalized
+		{
 			using type = std::remove_cvref_t<
 				std::conditional_t<std::is_pointer_v<T>,
-								   std::remove_pointer_t<T>,
-								   T>
+				std::remove_pointer_t<T>,
+				T>
 			>;
 		};
 
 		template<typename T, std::size_t N>
-		struct normalized<T[N]> {
+		struct normalized<T[N]>
+		{
 			using type = std::remove_cvref_t<T>;
 		};
 
@@ -337,8 +351,10 @@ namespace mio {
 		using normalized_t = typename normalized<T>::type;
 
 		template<typename CharacterType, typename AnyType>
-		struct type_helper {
-			static constexpr bool is_character_type() {
+		struct type_helper
+		{
+			static constexpr bool is_character_type()
+			{
 				return std::same_as<CharacterType, normalized_t<AnyType>>;
 			}
 		};
@@ -357,24 +373,24 @@ namespace mio {
 		constexpr bool is_char_or_wchar_type = is_char_type<AnyType>;
 #endif
 
-	template<typename T>
-	concept narrow_string_like = 
-		std::is_class_v<std::remove_cvref_t<T>> &&                              // 必须是类类型
-		requires(T t) {
-			{ t.data() } -> std::convertible_to<const char*>;                   // data() 返回 const char*
-			{ t.c_str() } -> std::same_as<const char*>;                         // c_str() 必须是 const char*
-			{ t.empty() } -> std::convertible_to<bool>;                         // empty() 返回 bool
-		} && std::is_same_v<typename std::remove_cvref_t<T>::value_type, char>;   // 内部字符类型必须为 char
+		template<typename T>
+		concept narrow_string_like =
+			std::is_class_v<std::remove_cvref_t<T>> &&                              // 必须是类类型
+			requires(T t) {
+				{ t.data() } -> std::convertible_to<const char*>;                   // data() 返回 const char*
+				{ t.c_str() } -> std::same_as<const char*>;                         // c_str() 必须是 const char*
+				{ t.empty() } -> std::convertible_to<bool>;                         // empty() 返回 bool
+		}&& std::is_same_v<typename std::remove_cvref_t<T>::value_type, char>;   // 内部字符类型必须为 char
 
 #ifdef _WIN32
-	template<typename T>
-	concept wide_string_like = 
-		std::is_class_v<std::remove_cvref_t<T>> &&                              // 必须是类类型
-		requires(T t) {
-			{ t.data() } -> std::convertible_to<const wchar_t*>;                // data() 返回 const wchar_t*
-			{ t.c_str() } -> std::same_as<const wchar_t*>;                      // c_str() 必须是 const wchar_t*
-			{ t.empty() } -> std::convertible_to<bool>;                         // empty() 返回 bool
-		} && std::is_same_v<typename std::remove_cvref_t<T>::value_type, wchar_t>; // 内部字符类型必须为 wchar_t
+		template<typename T>
+		concept wide_string_like =
+			std::is_class_v<std::remove_cvref_t<T>> &&                              // 必须是类类型
+			requires(T t) {
+				{ t.data() } -> std::convertible_to<const wchar_t*>;                // data() 返回 const wchar_t*
+				{ t.c_str() } -> std::same_as<const wchar_t*>;                      // c_str() 必须是 const wchar_t*
+				{ t.empty() } -> std::convertible_to<bool>;                         // empty() 返回 bool
+		}&& std::is_same_v<typename std::remove_cvref_t<T>::value_type, wchar_t>; // 内部字符类型必须为 wchar_t
 #endif
 
 		template<typename StringType>
@@ -384,23 +400,25 @@ namespace mio {
 		// Windows 平台：允许窄字符、宽字符字符串以及文件系统路径
 		template<typename StringType>
 		concept stringable_path = narrow_string_like<StringType> ||
-								  wide_string_like<StringType> ||
-								  filesystem_path_like<StringType>;
+			wide_string_like<StringType> ||
+			filesystem_path_like<StringType>;
 #else
 		// 非 Windows 平台：仅允许窄字符字符串和文件系统路径
 		template<typename StringType>
 		concept stringable_path = narrow_string_like<StringType> ||
-								  filesystem_path_like<StringType>;
+			filesystem_path_like<StringType>;
 #endif
 
 #ifdef _WIN32
 		template<wide_string_like StringType>
-		const wchar_t* c_str(const StringType& s) {
+		const wchar_t* c_str(const StringType& s)
+		{
 			return s.data();
 		}
 #endif
 		template<narrow_string_like StringType>
-		const char* c_str(const StringType& s) {
+		const char* c_str(const StringType& s)
+		{
 			return s.data();
 		}
 
@@ -410,8 +428,9 @@ namespace mio {
 #else
 			requires (narrow_string_like<StringType>)
 #endif
-		bool empty(const StringType& s) {
-			if(stringable_path<StringType>)
+		bool empty(const StringType& s)
+		{
+			if (stringable_path<StringType>)
 			{
 				return s.empty();
 			}
@@ -420,6 +439,15 @@ namespace mio {
 				return s == nullptr;
 			}
 		}
+
+		template<access_mode Mode>
+		concept FileReadAccess = (Mode == access_mode::read);
+
+		template<access_mode Mode>
+		concept FileWriteAccess = (Mode == access_mode::write);
+
+		template<access_mode Mode>
+		concept FilePrivateAccess = (Mode == access_mode::private_page);
 
 	} // namespace detail
 } // namespace mio
@@ -437,11 +465,11 @@ namespace mio {
 	// This value represents an invalid file handle type. This can be used to
 	// determine whether `basic_mmap::file_handle` is valid, for example.
 #ifdef _WIN32
-    using file_handle_type = HANDLE;
-    static const file_handle_type invalid_handle = INVALID_HANDLE_VALUE;
+	using file_handle_type = HANDLE;
+	static const file_handle_type invalid_handle = INVALID_HANDLE_VALUE;
 #else
-    using file_handle_type = int;
-    constexpr file_handle_type invalid_handle = -1;
+	using file_handle_type = int;
+	constexpr file_handle_type invalid_handle = -1;
 #endif
 
 	template<access_mode AccessMode, typename ByteT>
@@ -507,9 +535,7 @@ namespace mio {
 		template<typename String>
 		basic_mmap(const String& path, const size_type offset = 0, const size_type length = map_entire_file)
 		{
-			std::error_code error;
-			map(path, offset, length, error);
-			if (error) { throw std::system_error(error); }
+			map(path, offset, length);
 		}
 
 		/**
@@ -519,9 +545,7 @@ namespace mio {
 		 */
 		basic_mmap(const handle_type handle, const size_type offset = 0, const size_type length = map_entire_file)
 		{
-			std::error_code error;
-			map(handle, offset, length, error);
-			if (error) { throw std::system_error(error); }
+			map(handle, offset, length);
 		}
 #endif // __cpp_exceptions
 
@@ -581,20 +605,18 @@ namespace mio {
 		 * Returns a pointer to the first requested byte, or `nullptr` if no memory mapping
 		 * exists.
 		 */
-		template<
-			access_mode A = AccessMode,
-			typename = typename std::enable_if<A == access_mode::write>::type
-		> pointer data() noexcept { return data_; }
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		pointer data() noexcept { return data_; }
 		const_pointer data() const noexcept { return data_; }
 
 		/**
 		 * Returns an iterator to the first requested byte, if a valid memory mapping
 		 * exists, otherwise this function call is undefined behaviour.
 		 */
-		template<
-			access_mode A = AccessMode,
-			typename = typename std::enable_if<A == access_mode::write>::type
-		> iterator begin() noexcept { return data(); }
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		iterator begin() noexcept { return data(); }
 		const_iterator begin() const noexcept { return data(); }
 		const_iterator cbegin() const noexcept { return data(); }
 
@@ -602,10 +624,9 @@ namespace mio {
 		 * Returns an iterator one past the last requested byte, if a valid memory mapping
 		 * exists, otherwise this function call is undefined behaviour.
 		 */
-		template<
-			access_mode A = AccessMode,
-			typename = typename std::enable_if<A == access_mode::write>::type
-		> iterator end() noexcept { return data() + length(); }
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		iterator end() noexcept { return data() + length(); }
 		const_iterator end() const noexcept { return data() + length(); }
 		const_iterator cend() const noexcept { return data() + length(); }
 
@@ -614,10 +635,9 @@ namespace mio {
 		 * memory mapping exists, otherwise this function call is undefined
 		 * behaviour.
 		 */
-		template<
-			access_mode A = AccessMode,
-			typename = typename std::enable_if<A == access_mode::write>::type
-		> reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
 		const_reverse_iterator rbegin() const noexcept
 		{
 			return const_reverse_iterator(end());
@@ -631,10 +651,9 @@ namespace mio {
 		 * Returns a reverse iterator past the first mapped byte, if a valid memory
 		 * mapping exists, otherwise this function call is undefined behaviour.
 		 */
-		template<
-			access_mode A = AccessMode,
-			typename = typename std::enable_if<A == access_mode::write>::type
-		> reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
 		const_reverse_iterator rend() const noexcept
 		{
 			return const_reverse_iterator(begin());
@@ -645,6 +664,43 @@ namespace mio {
 		}
 
 		/**
+		 * Establishes a memory mapping with AccessMode. If the mapping is
+		 * unsuccesful, the reason is reported via `error` and the object remains in
+		 * a state as if this function hadn't been called.
+		 *
+		 * `handle`, which must be a valid file handle, which is used to memory map the
+		 * requested region. Upon failure, `error` is set to indicate the reason and the
+		 * object remains in an unmapped state.
+		 *
+		 * `offset` is the number of bytes, relative to the start of the file, where the
+		 * mapping should begin. When specifying it, there is no need to worry about
+		 * providing a value that is aligned with the operating system's page allocation
+		 * granularity. This is adjusted by the implementation such that the first requested
+		 * byte (as returned by `data` or `begin`), so long as `offset` is valid, will be at
+		 * `offset` from the start of the file.
+		 *
+		 * `length` is the number of bytes to map. It may be `map_entire_file`, in which
+		 * case a mapping of the entire file is created.
+		 */
+		void map(const handle_type handle, const size_type offset, const size_type length);
+
+		/**
+		 * Establishes a memory mapping with AccessMode. If the mapping is
+		 * unsuccesful, the reason is reported via `error` and the object remains in
+		 * a state as if this function hadn't been called.
+		 *
+		 * `handle`, which must be a valid file handle, which is used to memory map the
+		 * requested region. Upon failure, `error` is set to indicate the reason and the
+		 * object remains in an unmapped state.
+		 *
+		 * The entire file is mapped.
+		 */
+		void map(const handle_type handle)
+		{
+			map(handle, 0, map_entire_file);
+		}
+
+		/**
 		 * Returns a reference to the `i`th byte from the first requested byte (as returned
 		 * by `data`). If this is invoked when no valid memory mapping has been created
 		 * prior to this call, undefined behaviour ensues.
@@ -652,9 +708,9 @@ namespace mio {
 		reference operator[](const size_type i) noexcept { return data_[i]; }
 		const_reference operator[](const size_type i) const noexcept { return data_[i]; }
 
-		void map_sp(const char* path, const size_type offset, const size_type length, std::error_code& error);
+		void map_sp(const char* path, const size_type offset, const size_type length);
 #ifdef _WIN32
-		void map_wsp(const wchar_t* path, const size_type offset, const size_type length, std::error_code& error);
+		void map_wsp(const wchar_t* path, const size_type offset, const size_type length);
 #endif
 
 		/**
@@ -678,7 +734,7 @@ namespace mio {
 		 * case a mapping of the entire file is created.
 		 */
 		template<typename String>
-		void map(const String & path, const size_type offset, const size_type length, std::error_code & error);
+		void map(const String& path, const size_type offset, const size_type length);
 
 		/**
 		 * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
@@ -693,47 +749,9 @@ namespace mio {
 		 * The entire file is mapped.
 		 */
 		template<typename StringPath>
-		void map(const StringPath & path, std::error_code & error)
+		void map(const StringPath& path)
 		{
-			map(path, 0, map_entire_file, error);
-		}
-
-		/**
-		 * Establishes a memory mapping with AccessMode. If the mapping is
-		 * unsuccesful, the reason is reported via `error` and the object remains in
-		 * a state as if this function hadn't been called.
-		 *
-		 * `handle`, which must be a valid file handle, which is used to memory map the
-		 * requested region. Upon failure, `error` is set to indicate the reason and the
-		 * object remains in an unmapped state.
-		 *
-		 * `offset` is the number of bytes, relative to the start of the file, where the
-		 * mapping should begin. When specifying it, there is no need to worry about
-		 * providing a value that is aligned with the operating system's page allocation
-		 * granularity. This is adjusted by the implementation such that the first requested
-		 * byte (as returned by `data` or `begin`), so long as `offset` is valid, will be at
-		 * `offset` from the start of the file.
-		 *
-		 * `length` is the number of bytes to map. It may be `map_entire_file`, in which
-		 * case a mapping of the entire file is created.
-		 */
-		void map(const handle_type handle, const size_type offset,
-			const size_type length, std::error_code& error);
-
-		/**
-		 * Establishes a memory mapping with AccessMode. If the mapping is
-		 * unsuccesful, the reason is reported via `error` and the object remains in
-		 * a state as if this function hadn't been called.
-		 *
-		 * `handle`, which must be a valid file handle, which is used to memory map the
-		 * requested region. Upon failure, `error` is set to indicate the reason and the
-		 * object remains in an unmapped state.
-		 *
-		 * The entire file is mapped.
-		 */
-		void map(const handle_type handle, std::error_code& error)
-		{
-			map(handle, 0, map_entire_file, error);
+			map(path, 0, map_entire_file);
 		}
 
 		/**
@@ -750,9 +768,9 @@ namespace mio {
 		void swap(basic_mmap& other);
 
 		/** Flushes the memory mapped page to disk. Errors are reported via `error`. */
-		template<access_mode A = AccessMode>
-		typename std::enable_if<A == access_mode::write, void>::type
-			sync(std::error_code& error);
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		void sync();
 
 		/**
 		 * All operators compare the address of the first byte and size of the two mapped
@@ -760,10 +778,9 @@ namespace mio {
 		 */
 
 	private:
-		template<
-			access_mode A = AccessMode,
-			typename = typename std::enable_if<A == access_mode::write>::type
-		> pointer get_mapping_start() noexcept
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		pointer get_mapping_start() noexcept
 		{
 			return !data() ? nullptr : data() - mapping_offset();
 		}
@@ -778,11 +795,12 @@ namespace mio {
 		 * if it's `read`, but since the destructor cannot be templated, we need to
 		 * do SFINAE in a dedicated function, where one syncs and the other is a noop.
 		 */
-		template<access_mode A = AccessMode>
-		typename std::enable_if<A == access_mode::write, void>::type
-			conditional_sync();
-		template<access_mode A = AccessMode>
-		typename std::enable_if<A == access_mode::read, void>::type conditional_sync();
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		void conditional_sync();
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileReadAccess<Mode>)
+		void conditional_sync();
 	};
 
 	template<access_mode AccessMode, typename ByteT>
@@ -841,66 +859,54 @@ namespace mio {
 		typename MMap,
 		typename MappingToken
 	> MMap make_mmap(const MappingToken& token,
-		int64_t offset, int64_t length, std::error_code& error)
+		int64_t offset, int64_t length)
 	{
 		MMap mmap;
 
-		mmap.map(token, offset, length, error);
+		mmap.map(token, offset, length);
 
 		return mmap;
 	}
 
 	// Generic template for mmap_source for various MappingToken types
 	template<typename MappingToken>
-	mmap_source make_mmap_source(const MappingToken& token,
-		mmap_source::size_type offset,
-		mmap_source::size_type length,
-		std::error_code& error)
+	mmap_source make_mmap_source(const MappingToken& token, mmap_source::size_type offset, mmap_source::size_type length)
 	{
-		return make_mmap<mmap_source>(token, offset, length, error);
+		return make_mmap<mmap_source>(token, offset, length);
 	}
 
 	// Overload specialized for std::filesystem::path
-	inline mmap_source make_mmap_source(const std::filesystem::path& path,
-		mmap_source::size_type offset,
-		mmap_source::size_type length,
-		std::error_code& error)
+	inline mmap_source make_mmap_source(const std::filesystem::path& path, mmap_source::size_type offset, mmap_source::size_type length)
 	{
 		// Convert filesystem path to std::string and call the generic make_mmap function.
-		return make_mmap<mmap_source>(path, offset, length, error);
+		return make_mmap<mmap_source>(path, offset, length);
 	}
 
 	// Overload for mmap_source that omits offset and length parameters (defaults to 0 and map_entire_file).
 	template<typename MappingToken>
-	mmap_source make_mmap_source(const MappingToken& token, std::error_code& error)
+	mmap_source make_mmap_source(const MappingToken& token)
 	{
-		return make_mmap_source(token, 0, map_entire_file, error);
+		return make_mmap_source(token, 0, map_entire_file);
 	}
 
 	// Generic template for mmap_sink for various MappingToken types
 	template<typename MappingToken>
-	mmap_sink make_mmap_sink(const MappingToken& token,
-		mmap_sink::size_type offset,
-		mmap_sink::size_type length,
-		std::error_code& error)
+	mmap_sink make_mmap_sink(const MappingToken& token, mmap_sink::size_type offset, mmap_sink::size_type length)
 	{
-		return make_mmap<mmap_sink>(token, offset, length, error);
+		return make_mmap<mmap_sink>(token, offset, length);
 	}
 
 	// Overload specialized for std::filesystem::path for mmap_sink
-	inline mmap_sink make_mmap_sink(const std::filesystem::path& path,
-		mmap_sink::size_type offset,
-		mmap_sink::size_type length,
-		std::error_code& error)
+	inline mmap_sink make_mmap_sink(const std::filesystem::path& path, mmap_sink::size_type offset, mmap_sink::size_type length)
 	{
-		return make_mmap<mmap_sink>(path.string(), offset, length, error);
+		return make_mmap<mmap_sink>(path.string(), offset, length);
 	}
 
 	// Overload for mmap_sink that omits offset and length parameters (defaults to 0 and map_entire_file).
 	template<typename MappingToken>
-	mmap_sink make_mmap_sink(const MappingToken& token, std::error_code& error)
+	mmap_sink make_mmap_sink(const MappingToken& token)
 	{
-		return make_mmap_sink(token, 0, map_entire_file, error);
+		return make_mmap_sink(token, 0, map_entire_file);
 	}
 
 } // namespace mio
@@ -930,7 +936,7 @@ namespace mio
 		struct mio_open_file_helper
 		{
 
-		#ifdef _WIN32
+#ifdef _WIN32
 			/**
 			 * Windows-specific helper function to open a file given a wide-character (wstring) path.
 			 * @param path The file path as a wide-character string.
@@ -939,13 +945,17 @@ namespace mio
 			 */
 			static file_handle_type open_file_helper_wstring(const std::wstring& path, const access_mode mode)
 			{
+				//File read or read/write mode.
 				DWORD desired_access = (mode == access_mode::read) ? GENERIC_READ : (GENERIC_READ | GENERIC_WRITE);
+				//Private files do not have any attributes.
 				DWORD flags_and_attributes = (mode == access_mode::private_page) ? FILE_ATTRIBUTE_NORMAL : (mode == access_mode::read ? FILE_ATTRIBUTE_READONLY : FILE_ATTRIBUTE_TEMPORARY);
+				//Is the file inaccessible to other processes?
+				DWORD file_share_mode = (mode == access_mode::private_page) ? 0 : (FILE_SHARE_READ | FILE_SHARE_WRITE);
 				return ::CreateFileW
 				(
 					path.c_str(),
 					desired_access,
-					FILE_SHARE_READ | FILE_SHARE_WRITE, //ShareMode
+					file_share_mode, //ShareMode
 					nullptr, //SecurityAttributes
 					OPEN_EXISTING, //CreationDisposition
 					flags_and_attributes, //FlagsAndAttributes
@@ -975,7 +985,7 @@ namespace mio
 			{
 				return open_file_helper_wstring(path.wstring(), mode);
 			}
-		#endif // _WIN32
+#endif // _WIN32
 
 			/**
 			 * Internal helper function to check if a given path is empty.
@@ -1005,7 +1015,7 @@ namespace mio
 				file_handle_type handle = invalid_handle;
 
 				//For windows, we need to use CreateFileW to open a file with a wide-character path.
-		#ifdef _WIN32
+#ifdef _WIN32
 				if constexpr (std::same_as<Path, std::string>)
 					handle = open_file_helper(path, mode);
 				else if constexpr (std::same_as<Path, std::wstring>)
@@ -1015,42 +1025,18 @@ namespace mio
 				else
 					// Attempt to convert other types to std::string
 					handle = open_file_helper(std::string(path), mode);
-		#else
-				//For macos and linux with POSIX stdandard, we can use the open() function to open a file with a narrow-character path.
+#else
+		//For macos and linux with POSIX stdandard, we can use the open() function to open a file with a narrow-character path.
 
 				int flags = mode == access_mode::read ? O_RDONLY : O_RDWR;
-				#ifdef _LARGEFILE64_SOURCE
-					flags |= O_LARGEFILE;
-				#endif
+#ifdef _LARGEFILE64_SOURCE
+				flags |= O_LARGEFILE;
+#endif
 				if constexpr (std::same_as<Path, std::filesystem::path>)
 					handle = ::open(path.c_str(), flags, S_IRWXU);
 				else
 					handle = ::open(c_str(path), flags, S_IRWXU);
-		#endif
-				return handle;
-			}
-
-			/**
-			 * Public interface to open a file with various path types.
-			 * It returns a file handle and also sets an error code if any issues arise.
-			 * @param path The file path to open (can be string, wstring, or filesystem::path).
-			 * @param mode The access mode (read or write).
-			 * @param error The error code to capture any errors.
-			 * @return A file handle if successful, invalid_handle if an error occurs.
-			 */
-			template<typename Path>
-			static file_handle_type open_file(const Path& path, const access_mode mode, std::error_code& error)
-			{
-				error.clear();
-				if (is_empty(path)) {
-					error = std::make_error_code(std::errc::invalid_argument);
-					return invalid_handle;
-				}
-				file_handle_type handle = open_file_implement(path, mode);
-				
-				if (handle == invalid_handle)
-					error = last_error();
-
+#endif
 				return handle;
 			}
 
@@ -1060,8 +1046,13 @@ namespace mio
 			 */
 			struct file_literal
 			{
-				enum class literal_type { narrow, wide } type;
-				union {
+				enum class literal_type
+				{
+					narrow, wide
+				} type;
+
+				union
+				{
 					const char* narrow;
 					const wchar_t* wide;
 				};
@@ -1073,7 +1064,8 @@ namespace mio
 				 * Converts the file literal to a std::string (narrow string) representation.
 				 * @return The converted narrow string.
 				 */
-				std::string to_string() const {
+				std::string to_string() const
+				{
 					if (type == literal_type::narrow)
 						return std::string(narrow);
 					else
@@ -1084,7 +1076,8 @@ namespace mio
 				 * Converts the file literal to a std::wstring (wide string) representation.
 				 * @return The converted wide string.
 				 */
-				std::wstring to_wstring() const {
+				std::wstring to_wstring() const
+				{
 					if (type == literal_type::wide)
 						return std::wstring(wide);
 					else
@@ -1093,38 +1086,58 @@ namespace mio
 			};
 
 			/**
+			 * Public interface to open a file with various path types.
+			 * It returns a file handle and also sets an error code if any issues arise.
+			 * @param path The file path to open (can be string, wstring, or filesystem::path).
+			 * @param mode The access mode (read or write).
+			 * @return A file handle if successful, invalid_handle if an error occurs.
+			 */
+			template<typename Path>
+			static file_handle_type open_file(const Path& path, const access_mode mode)
+			{
+				if (is_empty(path))
+				{
+					std::error_code error = std::make_error_code(std::errc::invalid_argument);
+					std::string error_message = "String literal path is empty! " + error.message();
+					my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
+				}
+
+				file_handle_type handle = open_file_implement(path, mode);
+
+				return handle;
+			}
+
+			/**
 			 * Overloaded function to open a file using file literal types (either narrow or wide strings).
 			 * This helps open files using string literals directly.
 			 * @param literal The file literal (either narrow or wide string).
 			 * @param mode The access mode (read or write).
-			 * @param error The error code to capture any errors.
 			 * @return A file handle if successful, invalid_handle if an error occurs.
 			 */
-			static file_handle_type open_file(const file_literal& literal, const access_mode mode, std::error_code& error)
+			static file_handle_type open_file(const file_literal& literal, const access_mode mode)
 			{
-				error.clear();
 				bool empty_literal = false;
 				if (literal.type == file_literal::literal_type::narrow)
 					empty_literal = (literal.narrow == nullptr || literal.narrow[0] == '\0');
 				else
 					empty_literal = (literal.wide == nullptr || literal.wide[0] == L'\0');
 
-				if (empty_literal) {
-					error = std::make_error_code(std::errc::invalid_argument);
-					return invalid_handle;
+				if (empty_literal)
+				{
+					std::error_code error = std::make_error_code(std::errc::invalid_argument);
+					std::string error_message = "String literal path is empty! " + error.message();
+					my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
 				}
 
-		#ifdef _WIN32
+#ifdef _WIN32
 				file_handle_type handle = (literal.type == file_literal::literal_type::narrow)
 					? open_file_helper(literal.to_string(), mode)
 					: open_file_helper_wstring(literal.to_wstring(), mode);
-		#else
+#else
 				// On POSIX platforms, treat all literals as narrow strings
 				std::string pathStr = literal.to_string();
 				file_handle_type handle = ::open(pathStr.c_str(), mode == access_mode::read ? O_RDONLY : O_RDWR);
-		#endif
-				if (handle == invalid_handle)
-					error = last_error();
+#endif
 				return handle;
 			}
 
@@ -1135,9 +1148,9 @@ namespace mio
 			 * @param error The error code to capture any errors.
 			 * @return A file handle if successful, invalid_handle if an error occurs.
 			 */
-			static file_handle_type open_file(const char* path, const access_mode mode, std::error_code& error)
+			static file_handle_type open_file(const char* path, const access_mode mode)
 			{
-				return open_file(file_literal(path), mode, error);
+				return open_file(file_literal(path), mode);
 			}
 
 			/**
@@ -1147,9 +1160,9 @@ namespace mio
 			 * @param error The error code to capture any errors.
 			 * @return A file handle if successful, invalid_handle if an error occurs.
 			 */
-			static file_handle_type open_file(const wchar_t* path, const access_mode mode, std::error_code& error)
+			static file_handle_type open_file(const wchar_t* path, const access_mode mode)
 			{
-				return open_file(file_literal(path), mode, error);
+				return open_file(file_literal(path), mode);
 			}
 		};
 
@@ -1162,26 +1175,23 @@ namespace mio
 		 * @param error The error code to capture any errors that occur during the operation.
 		 * @return The size of the file in bytes, or 0 if an error occurs.
 		 */
-		inline size_t query_file_size(file_handle_type handle, std::error_code& error)
+		inline size_t query_file_size(file_handle_type handle)
 		{
-			error.clear();
-		#ifdef _WIN32
+#ifdef _WIN32
 			LARGE_INTEGER file_size;
 			if (::GetFileSizeEx(handle, &file_size) == 0)
 			{
-				error = detail::last_error();
 				return 0;
 			}
 			return static_cast<int64_t>(file_size.QuadPart);
-		#else // POSIX
+#else // POSIX
 			struct stat sbuf;
 			if (::fstat(handle, &sbuf) == -1)
 			{
-				error = detail::last_error();
 				return 0;
 			}
 			return sbuf.st_size;
-		#endif
+#endif
 		}
 
 		/**
@@ -1193,9 +1203,9 @@ namespace mio
 			char* data;                    ///< Pointer to the start of the mapped memory
 			int64_t length;                 ///< The length of the memory-mapped region
 			int64_t mapped_length;          ///< The actual length of the memory-mapped region
-		#ifdef _WIN32
+#ifdef _WIN32
 			file_handle_type file_mapping_handle; ///< Handle to the file mapping object on Windows
-		#endif
+#endif
 		};
 
 		/**
@@ -1209,14 +1219,14 @@ namespace mio
 		 * @return An `mmap_context` struct containing information about the memory-mapped region, or an empty context if an error occurs.
 		 */
 		inline mmap_context memory_map(const file_handle_type file_handle, const int64_t offset,
-			const int64_t length, const access_mode mode, std::error_code& error)
+			const int64_t length, const access_mode mode)
 		{
 			// Align the offset to the page boundary
 			const int64_t aligned_offset = make_offset_page_aligned(offset);
 			// Calculate the length of the region to map
 			const int64_t length_to_map = offset - aligned_offset + length;
-			
-		#ifdef _WIN32
+
+#ifdef _WIN32
 			DWORD protect = (mode == access_mode::private_page) ? PAGE_WRITECOPY : (mode == access_mode::read ? PAGE_READONLY : PAGE_READWRITE);
 			const int64_t max_file_size = offset + length;
 			// Create a file mapping object on Windows
@@ -1232,7 +1242,8 @@ namespace mio
 
 			if (file_mapping_handle == invalid_handle)
 			{
-				error = detail::last_error();
+				std::string error_message = "CreateFileMapping failed: " + detail::last_error().message();
+				my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
 				return {};
 			}
 
@@ -1242,12 +1253,12 @@ namespace mio
 			(
 				::MapViewOfFileEx
 				(
-				file_mapping_handle, //FileMappingObject
-				desired_access, //DesiredAccess
-				static_cast<DWORD>(aligned_offset >> 32), //FileOffsetHigh
-				static_cast<DWORD>(aligned_offset & 0xffffffff), //FileOffsetLow
-				static_cast<size_t>(length_to_map) != static_cast<size_t>(-1) ? length_to_map : 0, //NumberOfBytesToMap
-				reinterpret_cast<LPVOID>(0) //BaseAddress
+					file_mapping_handle, //FileMappingObject
+					desired_access, //DesiredAccess
+					static_cast<DWORD>(aligned_offset >> 32), //FileOffsetHigh
+					static_cast<DWORD>(aligned_offset & 0xffffffff), //FileOffsetLow
+					static_cast<size_t>(length_to_map) != static_cast<size_t>(-1) ? length_to_map : 0, //NumberOfBytesToMap
+					reinterpret_cast<LPVOID>(0) //BaseAddress
 				)
 			);
 
@@ -1267,21 +1278,24 @@ namespace mio
 			{
 				// Close file handle if mapping failed
 				::CloseHandle(file_mapping_handle);
-				error = detail::last_error();
+
+				std::string error_message = "MapViewOfFile failed: " + detail::last_error().message();
+				my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
+
 				return {};
 			}
-		#else // POSIX
+#else // POSIX
 			// Create a memory mapping on POSIX
 			char* mapping_start = static_cast<char*>
 			(
 				::mmap
 				(
-				const_cast<char*>(0), // No hint on where to map
-				length_to_map,
-				mode == access_mode::read ? PROT_READ : (PROT_READ | PROT_WRITE),
-				mode == access_mode::private_page ? MAP_PRIVATE : MAP_SHARED,
-				file_handle,
-				aligned_offset
+					const_cast<char*>(0), // No hint on where to map
+					length_to_map,
+					mode == access_mode::read ? PROT_READ : (PROT_READ | PROT_WRITE),
+					mode == access_mode::private_page ? MAP_PRIVATE : MAP_SHARED,
+					file_handle,
+					aligned_offset
 				)
 			);
 			if (mapping_start == MAP_FAILED)
@@ -1289,16 +1303,16 @@ namespace mio
 				error = detail::last_error();
 				return {};
 			}
-		#endif
+#endif
 
 			// Return a context containing the memory-mapped region details
 			mmap_context ctx;
-			ctx.data = mapping_start + offset - aligned_offset; // Adjust the pointer to the original offset
+			ctx.data = mapping_start + (offset - aligned_offset); // Adjust the pointer to the original offset
 			ctx.length = length;
 			ctx.mapped_length = length_to_map;
-		#ifdef _WIN32
+#ifdef _WIN32
 			ctx.file_mapping_handle = file_mapping_handle;  // Store file mapping handle on Windows
-		#endif
+#endif
 			return ctx;
 		}
 
@@ -1307,24 +1321,24 @@ namespace mio
 			if (data_pointer != nullptr)
 			{
 
-	#ifdef _WIN32
+#ifdef _WIN32
 				if (::FlushViewOfFile(mapping_pointer, mapped_length) == 0 || ::FlushFileBuffers(file_handle) == 0)
-	#else // POSIX
+#else // POSIX
 				if (::msync(mapping_pointer, mapped_length, MS_SYNC) != 0)
-	#endif
+#endif
 				{
-					std::string error_message = "FlushViewOfFile or Sync failed: " + detail::last_error().message();
+					std::string error_message = "FlushViewOfFile or mync failed: " + detail::last_error().message();
 					my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
 				}
 			}
 
-		#ifdef _WIN32
+#ifdef _WIN32
 			if (::FlushFileBuffers(file_handle) == 0)
 			{
 				std::string error_message = "FlushFileBuffers failed: " + detail::last_error().message();
 				my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
 			}
-		#endif
+#endif
 		}
 	}
 }
@@ -1403,22 +1417,25 @@ namespace mio {
 
 	template<access_mode AccessMode, typename ByteT>
 	void basic_mmap<AccessMode, ByteT>::map_sp(const char* path, const size_type offset,
-		const size_type length, std::error_code& error)
+		const size_type length)
 	{
-		error.clear();
 		if (path == nullptr || path[0] == '\0')
 		{
-			error = std::make_error_code(std::errc::invalid_argument);
-			return;
-		}
-		const auto handle = mio::detail::mio_open_file_helper::open_file(path, AccessMode, error);
-		if (error)
-		{
+			std::error_code error = std::make_error_code(std::errc::invalid_argument);
+			std::string error_message = "Path is empty! " + error.message();
+			my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
 			return;
 		}
 
-		map(handle, offset, length, error);
-		if (!error)
+		const auto handle = mio::detail::mio_open_file_helper::open_file(path, AccessMode);
+		if (handle == invalid_handle)
+		{
+			std::string error_message = "Open file failed, file handle is invalid! " + detail::last_error().message();
+			my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
+		}
+
+		map(handle, offset, length);
+		if (file_handle_ != invalid_handle)
 		{
 			is_handle_internal_ = true;
 		}
@@ -1426,23 +1443,24 @@ namespace mio {
 
 #ifdef _WIN32
 	template<access_mode AccessMode, typename ByteT>
-	void basic_mmap<AccessMode, ByteT>::map_wsp(const wchar_t* path, const size_type offset,
-		const size_type length, std::error_code& error)
+	void basic_mmap<AccessMode, ByteT>::map_wsp(const wchar_t* path, const size_type offset, const size_type length)
 	{
-		error.clear();
 		if (path == nullptr || path[0] == L'\0')
 		{
-			error = std::make_error_code(std::errc::invalid_argument);
-			return;
-		}
-		const auto handle = mio::detail::mio_open_file_helper::open_file(path, AccessMode, error);
-		if (error)
-		{
-			return;
+			std::error_code error = std::make_error_code(std::errc::invalid_argument);
+			std::string error_message = "Path is empty! " + error.message();
+			my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
 		}
 
-		map(handle, offset, length, error);
-		if (!error)
+		const auto handle = mio::detail::mio_open_file_helper::open_file(path, AccessMode);
+		if (handle == invalid_handle)
+		{
+			std::string error_message = "Open file failed, file handle is invalid! " + detail::last_error().message();
+			my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
+		}
+
+		map(handle, offset, length);
+		if (file_handle_ != invalid_handle)
 		{
 			is_handle_internal_ = true;
 		}
@@ -1462,25 +1480,23 @@ namespace mio {
 	 * @param offset The offset within the file where the mapping should begin.
 	 * @param length The length of the region to map. If set to a special value (e.g., map_entire_file),
 	 *        the mapping will extend to the end of the file.
-	 * @param error A reference to a std::error_code object that will be set if any error occurs.
 	 */
 	template<access_mode AccessMode, typename ByteT>
 	template<typename String>
 	void basic_mmap<AccessMode, ByteT>::map(const String& path, const size_type offset,
-		const size_type length, std::error_code& error)
+		const size_type length)
 	{
-		error.clear();
-
 		// Open the file using the underlying platform-specific API.
 		// The mio_open_file_helper::open_file() supports std::string, std::wstring, and std::filesystem::path.
-		const auto handle = mio::detail::mio_open_file_helper::open_file(path, AccessMode, error);
-		if (error)
-			return;
+		const auto handle = mio::detail::mio_open_file_helper::open_file(path, AccessMode);
+		if (handle == invalid_handle)
+		{
+			std::string error_message = "Open file failed, file handle is invalid! " + detail::last_error().message();
+			my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
+		}
 
 		// Proceed to map the file into memory using the obtained file handle.
-		map(handle, offset, length, error);
-		if (error)
-			return;
+		map(handle, offset, length);
 
 		// Set internal flag indicating that the file handle was not internally managed
 		// (i.e., it was provided externally by the user through the file opening process).
@@ -1513,40 +1529,50 @@ namespace mio {
 	 * @param offset The offset within the file from which to start mapping.
 	 * @param length The length of the memory region to map. If length is equal to map_entire_file,
 	 *        then the mapping will extend from the offset to the end of the file.
-	 * @param error A reference to a std::error_code object that will be set if an error occurs during
-	 *        any of the operations.
 	 */
 	template<access_mode AccessMode, typename ByteT>
-	void basic_mmap<AccessMode, ByteT>::map(const handle_type handle,
-		const size_type offset, const size_type length, std::error_code& error)
+	void basic_mmap<AccessMode, ByteT>::map(const handle_type handle, const size_type offset, const size_type length)
 	{
-		error.clear();
 		if (handle == invalid_handle)
 		{
-			error = std::make_error_code(std::errc::bad_file_descriptor);
+			std::error_code error = std::make_error_code(std::errc::bad_file_descriptor);
+			std::string error_message = "file handle is invalid. " + error.message();
+			my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
 			return;
 		}
 
 		// Query the size of the file using a platform-specific implementation.
-		const auto file_size = detail::query_file_size(handle, error);
-		if (error)
+		const auto file_size = detail::query_file_size(handle);
+		if (file_size == 0)
 		{
-			return;
+#ifdef _WIN32
+			std::string error_message = "Query file size is failed - GetFileSizeEx: " + detail::last_error().message();
+			my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
+#else // POSIX
+			std::string error_message = "Query file size is failed - fstat: " + detail::last_error().message();
+			my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
+#endif
 		}
 
 		// Validate that the requested mapping region [offset, offset+length) is within the file bounds.
 		if (offset + length > file_size)
 		{
-			error = std::make_error_code(std::errc::invalid_argument);
+			std::error_code error = std::make_error_code(std::errc::invalid_argument);
+			std::string error_message = "requested large mapping region [offset, offset+length) outside of file size bounds. " + error.message();
+			my_cpp2020_assert(false, error_message.c_str(), std::source_location::current());
 			return;
 		}
 
 		// Create a memory mapping of the file region.
 		// If length equals map_entire_file, the mapping extends from offset to the end of the file.
-		const auto ctx = detail::memory_map(handle, offset,
+		const auto context = detail::memory_map
+		(
+			handle, offset,
 			length == map_entire_file ? (file_size - offset) : length,
-			AccessMode, error);
-		if (!error)
+			AccessMode
+		);
+
+		if (context.data != nullptr)
 		{
 			// We must unmap the previous mapping that may have existed prior to this call.
 			// Note that this must only be invoked after a new mapping has been created in
@@ -1558,24 +1584,23 @@ namespace mio {
 			// Update internal state with the new mapping details.
 			file_handle_ = handle;
 			is_handle_internal_ = false;
-			data_ = reinterpret_cast<pointer>(ctx.data);
-			length_ = ctx.length;
-			mapped_length_ = ctx.mapped_length;
-	#ifdef _WIN32
-			file_mapping_handle_ = ctx.file_mapping_handle;
-	#endif
+			data_ = reinterpret_cast<pointer>(context.data);
+			length_ = context.length;
+			mapped_length_ = context.mapped_length;
+#ifdef _WIN32
+			file_mapping_handle_ = context.file_mapping_handle;
+#endif
 		}
 	}
 
 	template<access_mode AccessMode, typename ByteT>
-	template<access_mode A>
-	typename std::enable_if<A == access_mode::write, void>::type
-		basic_mmap<AccessMode, ByteT>::sync(std::error_code& error)
+	template<access_mode Mode>
+	requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+	void basic_mmap<AccessMode, ByteT>::sync()
 	{
-		error.clear();
 		if (!is_open())
 		{
-			error = std::make_error_code(std::errc::bad_file_descriptor);
+			//Current file is not open or closed
 			return;
 		}
 
@@ -1650,20 +1675,18 @@ namespace mio {
 	}
 
 	template<access_mode AccessMode, typename ByteT>
-	template<access_mode A>
-	typename std::enable_if<A == access_mode::write, void>::type
-		basic_mmap<AccessMode, ByteT>::conditional_sync()
+	template<access_mode Mode>
+	requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+	void basic_mmap<AccessMode, ByteT>::conditional_sync()
 	{
-		// This is invoked from the destructor, so not much we can do about
-		// failures here.
-		std::error_code ec;
-		sync(ec);
+		// This is invoked from the destructor, so not much we can do about failures here.
+		sync();
 	}
 
 	template<access_mode AccessMode, typename ByteT>
-	template<access_mode A>
-	typename std::enable_if<A == access_mode::read, void>::type
-		basic_mmap<AccessMode, ByteT>::conditional_sync()
+	template<access_mode Mode>
+	requires (detail::FileReadAccess<Mode>)
+	void basic_mmap<AccessMode, ByteT>::conditional_sync()
 	{
 		// noop
 	}
@@ -1785,29 +1808,15 @@ namespace mio {
 		}
 
 #ifdef __cpp_exceptions
-		/**
-		 * The same as invoking the `map` function, except any error that may occur
-		 * while establishing the mapping is wrapped in a `std::system_error` and is
-		 * thrown.
-		 */
 		template<typename String>
 		basic_shared_mmap(const String& path, const size_type offset = 0, const size_type length = map_entire_file)
 		{
-			std::error_code error;
-			map(path, offset, length, error);
-			if (error) { throw std::system_error(error); }
+			map(path, offset, length);
 		}
 
-		/**
-		 * The same as invoking the `map` function, except any error that may occur
-		 * while establishing the mapping is wrapped in a `std::system_error` and is
-		 * thrown.
-		 */
 		basic_shared_mmap(const handle_type handle, const size_type offset = 0, const size_type length = map_entire_file)
 		{
-			std::error_code error;
-			map(handle, offset, length, error);
-			if (error) { throw std::system_error(error); }
+			map(handle, offset, length);
 		}
 #endif // __cpp_exceptions
 
@@ -1863,10 +1872,9 @@ namespace mio {
 		 * Returns a pointer to the first requested byte, or `nullptr` if no memory mapping
 		 * exists.
 		 */
-		template<
-			access_mode A = AccessMode,
-			typename = typename std::enable_if<A == access_mode::write>::type
-		> pointer data() noexcept { return pimpl_->data(); }
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		pointer data() noexcept { return pimpl_->data(); }
 		const_pointer data() const noexcept { return pimpl_ ? pimpl_->data() : nullptr; }
 
 		/**
@@ -1881,10 +1889,9 @@ namespace mio {
 		 * Returns an iterator one past the last requested byte, if a valid memory mapping
 		 * exists, otherwise this function call is undefined behaviour.
 		 */
-		template<
-			access_mode A = AccessMode,
-			typename = typename std::enable_if<A == access_mode::write>::type
-		> iterator end() noexcept { return pimpl_->end(); }
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		iterator end() noexcept { return pimpl_->end(); }
 		const_iterator end() const noexcept { return pimpl_->end(); }
 		const_iterator cend() const noexcept { return pimpl_->cend(); }
 
@@ -1893,10 +1900,9 @@ namespace mio {
 		 * memory mapping exists, otherwise this function call is undefined
 		 * behaviour.
 		 */
-		template<
-			access_mode A = AccessMode,
-			typename = typename std::enable_if<A == access_mode::write>::type
-		> reverse_iterator rbegin() noexcept { return pimpl_->rbegin(); }
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		reverse_iterator rbegin() noexcept { return pimpl_->rbegin(); }
 		const_reverse_iterator rbegin() const noexcept { return pimpl_->rbegin(); }
 		const_reverse_iterator crbegin() const noexcept { return pimpl_->crbegin(); }
 
@@ -1904,10 +1910,9 @@ namespace mio {
 		 * Returns a reverse iterator past the first mapped byte, if a valid memory
 		 * mapping exists, otherwise this function call is undefined behaviour.
 		 */
-		template<
-			access_mode A = AccessMode,
-			typename = typename std::enable_if<A == access_mode::write>::type
-		> reverse_iterator rend() noexcept { return pimpl_->rend(); }
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		reverse_iterator rend() noexcept { return pimpl_->rend(); }
 		const_reverse_iterator rend() const noexcept { return pimpl_->rend(); }
 		const_reverse_iterator crend() const noexcept { return pimpl_->crend(); }
 
@@ -1941,9 +1946,9 @@ namespace mio {
 		 */
 		template<typename String>
 		void map(const String& path, const size_type offset,
-			const size_type length, std::error_code& error)
+			const size_type length)
 		{
-			map_impl(path, offset, length, error);
+			map_impl(path, offset, length);
 		}
 
 		/**
@@ -1959,9 +1964,9 @@ namespace mio {
 		 * The entire file is mapped.
 		 */
 		template<typename String>
-		void map(const String& path, std::error_code& error)
+		void map(const String& path)
 		{
-			map_impl(path, 0, map_entire_file, error);
+			map_impl(path, 0, map_entire_file);
 		}
 
 		/**
@@ -1984,9 +1989,9 @@ namespace mio {
 		 * case a mapping of the entire file is created.
 		 */
 		void map(const handle_type handle, const size_type offset,
-			const size_type length, std::error_code& error)
+			const size_type length)
 		{
-			map_impl(handle, offset, length, error);
+			map_impl(handle, offset, length);
 		}
 
 		/**
@@ -2000,9 +2005,9 @@ namespace mio {
 		 *
 		 * The entire file is mapped.
 		 */
-		void map(const handle_type handle, std::error_code& error)
+		void map(const handle_type handle)
 		{
-			map_impl(handle, 0, map_entire_file, error);
+			map_impl(handle, 0, map_entire_file);
 		}
 
 		/**
@@ -2019,10 +2024,9 @@ namespace mio {
 		void swap(basic_shared_mmap& other) { pimpl_.swap(other.pimpl_); }
 
 		/** Flushes the memory mapped page to disk. Errors are reported via `error`. */
-		template<
-			access_mode A = AccessMode,
-			typename = typename std::enable_if<A == access_mode::write>::type
-		> void sync(std::error_code& error) { if (pimpl_) pimpl_->sync(error); }
+		template<access_mode Mode = AccessMode>
+		requires (detail::FileWriteAccess<Mode> || detail::FilePrivateAccess<Mode>)
+		void sync() { if (pimpl_) pimpl_->sync(); }
 
 		/** All operators compare the underlying `basic_mmap`'s addresses. */
 
@@ -2059,17 +2063,16 @@ namespace mio {
 	private:
 		template<typename MappingToken>
 		void map_impl(const MappingToken& token, const size_type offset,
-			const size_type length, std::error_code& error)
+			const size_type length)
 		{
 			if (!pimpl_)
 			{
-				mmap_type mmap = make_mmap<mmap_type>(token, offset, length, error);
-				if (error) { return; }
+				mmap_type mmap = make_mmap<mmap_type>(token, offset, length);
 				pimpl_ = std::make_shared<mmap_type>(std::move(mmap));
 			}
 			else
 			{
-				pimpl_->map(token, offset, length, error);
+				pimpl_->map(token, offset, length);
 			}
 		}
 	};
